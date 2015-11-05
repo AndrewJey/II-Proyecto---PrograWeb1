@@ -1,0 +1,107 @@
+body {
+  background: #3366cc;
+}
+.image {
+  margin-top: 1%;
+  margin-left: 1%;
+  background: white;
+  border-radius: 15px;
+  width: 200px;
+  padding: 10px;
+}
+.img {
+  margin-left: 20px;
+  padding: 3px;
+}
+.title {
+  color: #3366cc;
+  margin: 0px;
+  margin-left: 7%;
+  margin-top: 0px;
+  padding: 5px;
+}
+.subtitle {
+  color: #3366cc;
+  margin-left: 38%;
+}
+h4 {
+  margin: 0px;
+}
+label {
+  padding: 1%;
+}
+input[type="text"],
+input[type="password"],
+select {
+  color: black;
+}
+input[id="codigoCareer"] {
+  margin-left: 1%;
+}
+.step_box:hover,
+#selected_step_box,
+.QuickStartLong:hover {
+  background: #b8e1fc;
+}
+.selected {
+  background-color: #0b3e6f;
+}
+.overlay-container {
+  display: none;
+  content: " ";
+  height: 100%;
+  width: 100%;
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.window-container {
+  display: block;
+  background: #0b3e6f;
+  margin: 8em auto;
+  width: 500px;
+  padding: 10px 20px 20px;
+  text-align: left;
+  z-index: 3;
+  border-radius: 3px;
+  box-shadow: 0px 0px 30px rgba(0, 0, 0, 0.2);
+  -webkit-transition: 0.4s ease-out;
+  -moz-transition: 0.4s ease-out;
+  -ms-transition: 0.4s ease-out;
+  -o-transition: 0.4s ease-out;
+  transition: 0.4s ease-out;
+  opacity: 0;
+}
+.zoomin {
+  -webkit-transform: scale(1.2);
+  -moz-transform: scale(1.2);
+  -ms-transform: scale(1.2);
+  transform: scale(1.2);
+}
+.window-container-visible {
+  -webkit-transform: scale(1);
+  -moz-transform: scale(1);
+  -ms-transform: scale(1);
+  transform: scale(1);
+  opacity: 1;
+}
+.window-container h3 {
+  margin: 1em 0 0.5em;
+  font-weight: normal;
+  font-size: 25px;
+  text-align: center;
+}
+.delete {
+  margin-left: 1%;
+}
+#close {
+  float: right;
+  margin-right: 1%;
+}
+.ingles {
+  top: 25%;
+  right: 25%;
+  position: absolute;
+  width: 120px;
+  float: right;
+}
