@@ -1,534 +1,495 @@
-var Select;
-var imagen = "";
-var title = "";
-var nuevaCarrera = true;
-var nuevoUsuario = true;
-var nuevoEstudiante = true;
+(function () {
+  'use strict';
 
-function prepareBinding() {
-    UpdateStudent();
-    UpdateCareer();
-    UpdateUser();
-    //el table-hover es el "metodo" para la sombrita
-    $('.table-hover tr').click(function() {
-        Select = $(this).data("rowKey");
-        seleccionar();
-    });
-    $("#search2").click(function(){
-        if (Select != null) {
-            popupVer(1);
-        }
-    });
-    $("#edit2").click(function(){
-        if (Select != null) {
-            buttonEditCarrer();
-        }
-    });
-    $("#add2").click(function(){
-        buttonAddCarrer();
-    });
-    $("#delete2").click(function(){
-        if (Select != null) {
-            popup(1);
-        }
-    });
+  var store = window.UTNStore.createStore();
+  var SKILLS = ['JavaScript', 'HTML/CSS', 'PHP', 'Java', 'C#', 'SQL', 'Python'];
 
-    $("#edit1").click(function(){
-        if (Select != null) {
-            buttonEditUser();
+  var selected = { users: null, careers: null, students: null };
+  var currentTab = 0;
+  var pendingImage = '';
+
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag);
+    if (attrs) {
+      Object.keys(attrs).forEach(function (k) {
+        if (k === 'className') node.className = attrs[k];
+        else if (k === 'text') node.textContent = attrs[k];
+        else if (k.startsWith('on') && typeof attrs[k] === 'function') node.addEventListener(k.slice(2).toLowerCase(), attrs[k]);
+        else if (attrs[k] !== null && attrs[k] !== undefined) node.setAttribute(k, String(attrs[k]));
+      });
+    }
+    (children || []).forEach(function (child) {
+      if (child == null) return;
+      if (typeof child === 'string') node.appendChild(document.createTextNode(child));
+      else node.appendChild(child);
+    });
+    return node;
+  }
+
+  function showToast(message, variant) {
+    var region = document.getElementById('toast-region');
+    if (!region) return;
+    var toast = el('div', { className: 'toast' + (variant ? ' toast-' + variant : ''), text: message });
+    region.appendChild(toast);
+    setTimeout(function () { toast.remove(); }, 3200);
+  }
+
+  function openModal(title, contentNode) {
+    var backdrop = document.getElementById('modal-backdrop');
+    var titleEl = document.getElementById('modal-title');
+    var bodyEl = document.getElementById('modal-body');
+    titleEl.textContent = title;
+    bodyEl.innerHTML = '';
+    bodyEl.appendChild(contentNode);
+    backdrop.hidden = false;
+    var focusable = bodyEl.querySelector('input, select, button');
+    if (focusable) focusable.focus();
+  }
+
+  function closeModal() {
+    var backdrop = document.getElementById('modal-backdrop');
+    backdrop.hidden = true;
+    document.getElementById('modal-body').innerHTML = '';
+    pendingImage = '';
+  }
+
+  function switchTab(index) {
+    currentTab = index;
+    for (var i = 0; i <= 3; i++) {
+      var btn = document.getElementById('tab-btn-' + i);
+      var panel = document.getElementById('tabs-' + i);
+      var active = i === index;
+      if (btn) btn.setAttribute('aria-selected', String(active));
+      if (panel) panel.hidden = !active;
+    }
+  }
+
+  function updateCounters() {
+    var u = store.listUsers().length;
+    var c = store.listCareers().length;
+    var s = store.listStudents().length;
+    document.getElementById('count-users').textContent = u;
+    document.getElementById('count-careers').textContent = c;
+    document.getElementById('count-students').textContent = s;
+    document.getElementById('kpi-users').textContent = u;
+    document.getElementById('kpi-careers').textContent = c;
+    document.getElementById('kpi-students').textContent = s;
+  }
+
+  function updateToolbarButtons(kind, prefix) {
+    var hasSel = selected[kind] !== null;
+    ['search', 'edit', 'delete'].forEach(function (act) {
+      var btn = document.getElementById(act + prefix);
+      if (btn) btn.disabled = !hasSel;
+    });
+  }
+
+  function renderTable(wrapperId, kind, prefix, headers, rows, mapper) {
+    var wrapper = document.getElementById(wrapperId);
+    wrapper.innerHTML = '';
+    if (selected[kind] !== null && selected[kind] >= rows.length) {
+      selected[kind] = null;
+    }
+    updateToolbarButtons(kind, prefix);
+    if (!rows.length) {
+      wrapper.appendChild(el('div', { className: 'empty-state', text: 'No hay registros aún. Usa "+ Agregar" para crear el primero.' }));
+      return;
+    }
+    var thead = el('thead', null, [
+      el('tr', null, headers.map(function (h) { return el('th', { text: h }); }))
+    ]);
+    var tbody = el('tbody');
+    rows.forEach(function (item, idx) {
+      var tr = el('tr', {
+        className: selected[kind] === idx ? 'is-selected' : '',
+        tabindex: '0',
+        'aria-selected': String(selected[kind] === idx),
+        onClick: function () {
+          selected[kind] = selected[kind] === idx ? null : idx;
+          renderAll();
+        },
+        onKeydown: function (e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            selected[kind] = selected[kind] === idx ? null : idx;
+            renderAll();
+          }
         }
+      }, mapper(item).map(function (val) { return el('td', { text: val }); }));
+      tbody.appendChild(tr);
     });
-    $("#add1").click(function(){
-        buttonAddUser();
-    });
-    $("#search1").click(function(){
-        if (Select != null) {
-            popupVer(2);
+    wrapper.appendChild(el('table', { className: 'data-table' }, [thead, tbody]));
+  }
+
+  function renderSearches() {
+    var container = document.getElementById('recent-searches');
+    container.innerHTML = '';
+    store.listSearches().forEach(function (entry) {
+      var chip = el('button', {
+        type: 'button',
+        className: 'chip',
+        text: entry.date + ' — ' + entry.term,
+        onClick: function () {
+          document.getElementById('global-search-input').value = entry.term;
+          executeSearch(entry.term, false);
         }
+      });
+      container.appendChild(chip);
     });
-    $("#delete1").click(function(){
-        if (Select != null) {
-            popup(2);
+  }
+
+  function executeSearch(term, saveHistory) {
+    var box = document.getElementById('search-results');
+    box.innerHTML = '';
+    var clean = String(term || '').trim();
+    if (!clean) return;
+    if (saveHistory) {
+      store.recordSearch(clean);
+      renderSearches();
+    }
+    var res = store.searchAll(clean);
+    var total = res.students.length + res.careers.length + res.users.length;
+    box.appendChild(el('p', {
+      text: total + ' resultado(s) para "' + clean + '" (' +
+        res.students.length + ' estudiantes, ' + res.careers.length + ' carreras, ' + res.users.length + ' usuarios).'
+    }));
+    if (res.students.length) {
+      box.appendChild(el('h3', { text: 'Estudiantes' }));
+      res.students.forEach(function (s) {
+        box.appendChild(el('div', { className: 'alert alert-info', text: s.nombre + ' (' + s.cedula + ') — ' + s.carrera + ' · Inglés: ' + s.ingles }));
+      });
+    }
+    if (res.careers.length) {
+      box.appendChild(el('h3', { text: 'Carreras' }));
+      res.careers.forEach(function (c) {
+        box.appendChild(el('div', { className: 'alert alert-info', text: c.nombreCarrera + ' [' + c.codigoCareer + ']' }));
+      });
+    }
+    if (res.users.length) {
+      box.appendChild(el('h3', { text: 'Usuarios' }));
+      res.users.forEach(function (u) {
+        box.appendChild(el('div', { className: 'alert alert-info', text: u.nombreCompleto + ' (@' + u.nombreUsuario + ') — ' + u.rol }));
+      });
+    }
+  }
+
+  // --- Forms ---
+  function openUserForm(editIndex) {
+    var isEdit = typeof editIndex === 'number';
+    var current = isEdit ? store.listUsers()[editIndex] : null;
+    var errBox = el('div', { className: 'alert alert-error', role: 'alert', hidden: '' });
+
+    var cedulaIn = el('input', { id: 'f-cedula', type: 'text', required: '', value: current ? current.cedula : '' });
+    var userIn = el('input', { id: 'f-user', type: 'text', required: '', value: current ? current.nombreUsuario : '' });
+    var nameIn = el('input', { id: 'f-name', type: 'text', required: '', value: current ? current.nombreCompleto : '' });
+    var passIn = el('input', {
+      id: 'f-pass',
+      type: 'password',
+      placeholder: isEdit ? 'Dejar vacío para mantener la actual' : 'Contraseña',
+      required: isEdit ? null : ''
+    });
+    var rolSel = el('select', { id: 'f-rol' }, ['Administrador', 'Director de carrera', 'Auxiliar'].map(function (r) {
+      return el('option', { value: r, text: r, selected: current && current.rol === r ? '' : null });
+    }));
+
+    var form = el('form', {
+      onSubmit: function (e) {
+        e.preventDefault();
+        var res = store.saveUser({
+          cedula: cedulaIn.value,
+          nombreUsuario: userIn.value,
+          nombreCompleto: nameIn.value,
+          contrasena: passIn.value,
+          rol: rolSel.value
+        }, isEdit ? editIndex : undefined);
+        if (!res.ok) {
+          errBox.textContent = res.error;
+          errBox.hidden = false;
+          return;
         }
-    });
-    $("#search3").click(function(){
-        if (Select != null) {
-            popupVer(3);
+        closeModal();
+        renderAll();
+        showToast(isEdit ? 'Usuario actualizado.' : 'Usuario agregado.', 'success');
+      }
+    }, [
+      errBox,
+      el('div', { className: 'field' }, [el('label', { for: 'f-cedula', text: 'Cédula' }), cedulaIn]),
+      el('div', { className: 'field' }, [el('label', { for: 'f-user', text: 'Nombre de usuario' }), userIn]),
+      el('div', { className: 'field' }, [el('label', { for: 'f-name', text: 'Nombre completo' }), nameIn]),
+      el('div', { className: 'field' }, [el('label', { for: 'f-pass', text: 'Contraseña' }), passIn]),
+      el('div', { className: 'field' }, [el('label', { for: 'f-rol', text: 'Rol' }), rolSel]),
+      el('div', { className: 'modal-footer' }, [
+        el('button', { type: 'button', className: 'btn btn-secondary', text: 'Cancelar', onClick: closeModal }),
+        el('button', { type: 'submit', className: 'btn btn-primary', text: isEdit ? 'Guardar cambios' : 'Crear usuario' })
+      ])
+    ]);
+    openModal(isEdit ? 'Editar usuario' : 'Nuevo usuario', form);
+  }
+
+  function openCareerForm(editIndex) {
+    var isEdit = typeof editIndex === 'number';
+    var current = isEdit ? store.listCareers()[editIndex] : null;
+    var errBox = el('div', { className: 'alert alert-error', role: 'alert', hidden: '' });
+
+    var nameIn = el('input', { id: 'f-cname', type: 'text', required: '', value: current ? current.nombreCarrera : '' });
+    var codeIn = el('input', { id: 'f-ccode', type: 'text', required: '', value: current ? current.codigoCareer : '' });
+
+    var form = el('form', {
+      onSubmit: function (e) {
+        e.preventDefault();
+        var res = store.saveCareer({
+          nombreCarrera: nameIn.value,
+          codigoCareer: codeIn.value
+        }, isEdit ? editIndex : undefined);
+        if (!res.ok) {
+          errBox.textContent = res.error;
+          errBox.hidden = false;
+          return;
         }
-    });
-    $("#edit3").click(function(){
-        if (Select != null) {
-            buttonEditStudent();
+        closeModal();
+        renderAll();
+        showToast(isEdit ? 'Carrera actualizada.' : 'Carrera agregada.', 'success');
+      }
+    }, [
+      errBox,
+      el('div', { className: 'field' }, [el('label', { for: 'f-cname', text: 'Nombre de la carrera' }), nameIn]),
+      el('div', { className: 'field' }, [el('label', { for: 'f-ccode', text: 'Código' }), codeIn]),
+      el('div', { className: 'modal-footer' }, [
+        el('button', { type: 'button', className: 'btn btn-secondary', text: 'Cancelar', onClick: closeModal }),
+        el('button', { type: 'submit', className: 'btn btn-primary', text: isEdit ? 'Guardar cambios' : 'Crear carrera' })
+      ])
+    ]);
+    openModal(isEdit ? 'Editar carrera' : 'Nueva carrera', form);
+  }
+
+  function openStudentForm(editIndex) {
+    var isEdit = typeof editIndex === 'number';
+    var current = isEdit ? store.listStudents()[editIndex] : null;
+    var careers = store.listCareers();
+    var errBox = el('div', { className: 'alert alert-error', role: 'alert', hidden: '' });
+    pendingImage = current ? (current.imagen || '') : '';
+
+    var cedulaIn = el('input', { id: 'f-sced', type: 'text', required: '', value: current ? current.cedula : '' });
+    var nameIn = el('input', { id: 'f-sname', type: 'text', required: '', value: current ? current.nombre : '' });
+    var careerOptions = careers.length
+      ? careers.map(function (c) { return c.nombreCarrera; })
+      : ['Sin asignar'];
+    if (current && current.carrera && careerOptions.indexOf(current.carrera) === -1) {
+      careerOptions.unshift(current.carrera);
+    }
+    var careerSel = el('select', { id: 'f-scareer' }, careerOptions.map(function (cname) {
+      return el('option', { value: cname, text: cname, selected: current && current.carrera === cname ? '' : null });
+    }));
+    var englishSel = el('select', { id: 'f-senglish' }, ['Principiante', 'Intermedio', 'Avanzado'].map(function (lvl) {
+      return el('option', { value: lvl, text: lvl, selected: current && current.ingles === lvl ? '' : null });
+    }));
+
+    var preview = el('div', { style: 'margin-top:0.5rem;' });
+    function renderPreview() {
+      preview.innerHTML = '';
+      if (pendingImage) {
+        preview.appendChild(el('img', { className: 'thumb', src: pendingImage, alt: 'Vista previa del estudiante' }));
+      }
+    }
+    renderPreview();
+
+    var fileIn = el('input', {
+      id: 'f-sfile',
+      type: 'file',
+      accept: 'image/png,image/jpeg,image/gif,image/webp',
+      onChange: function (evt) {
+        var f = evt.target.files && evt.target.files[0];
+        if (!f) return;
+        if (f.size > 1024 * 1024) {
+          errBox.textContent = 'La imagen no debe superar 1 MB.';
+          errBox.hidden = false;
+          return;
         }
-    });
-    $("#add3").click(function(){
-        buttonAddStudent();
-    });
-    $("#delete3").click(function(){
-        if (Select != null) {
-            popup(3);
-        }
-    });
-}
-function my_alert(text) {
-    alert(text);
-}
-
-function UpdateCareer(){
-    var carreras = JSON.parse(localStorage.getItem('carreras'));
-    var rows = "<table class='table table-hover careers step_wrapper'><tr disabled><th>Nombre</th><th>C&oacute;digo</th></tr>";
-    if (carreras === null)
-    {
-        carreras = []
-    };
-
-    for(var i = 0; i< carreras.length; i++){
-        rows += "<tr class='step_box' data-row-key="+i+"><td>"+carreras[i].nombreCarrera+"</td><td>"+carreras[i].codigoCareer+"</td></tr>" 
-    };
-    rows += "</table>";
-    var buttoms ="<div id='buttoms2first'><button id='add2' type='button' class='btn btn-default'><span class='glyphicon glyphicon-plus-sign'></span></button><button id='edit2' type='button' class='btn btn-default'><span class='glyphicon glyphicon-pencil'></span></button><button id='delete2' type='button' class='btn btn-default'><span class='glyphicon glyphicon-minus-sign'></span></button><button id='search2' type='button' class='btn btn-default'><span class='glyphicon glyphicon-search'></span></button></div>"
-    $('#table_wrapper2').html(rows+buttoms);
-}
-
-function buttonEditCarrer(){
-    var div = "<form action='' method='post'><div id='editar2'><label>Nombre: </label><input title='Se necesita un nombre' type='text' size='20' maxlength='20' id='nombreCareer' name='nombreCareer' required autofocus/><br/><label>C&oacute;digo: </label><input type='text' id='codigoCareer' name='codigo' required autofocus/><br/></div>";
-    var buttoms = "<div id='buttoms2second'><button id='ok2' type='submit' class='btn btn-default'><span class='glyphicon glyphicon-ok'></span></button><button id='cancel2' type='submit' class='btn btn-default'><span class='glyphicon glyphicon-remove'></span></button></div></form>"
-    $('#table_wrapper2').html(div+buttoms);
-    var carreras = JSON.parse(localStorage.getItem('carreras'));
-    $("#nombreCareer").val(carreras[Select].nombreCarrera);
-    $("#codigoCareer").val(carreras[Select].codigoCareer);
-    $("#cancel2").click(function(){
-        $("#buttoms2second").remove();
-        $("#editar2").remove();
-        prepareBinding();
-    });
-    $("#ok2").click(function(){
-        if (($("#nombreCareer").val() === "") || ($("#codigoCareer").val() === "")) {
-
-        }else{
-            EditCareer(Select);
-            prepareBinding();
-        }
-    });
-}
-function EditCareer (element)
-{
-    nuevaCarrera = false;
-
-    var carreras = JSON.parse(localStorage.getItem('carreras'));
-    carreras[element].nombreCarrera = $('#nombreCareer').val();
-    carreras[element].codigoCareer = $('#codigoCareer').val();
-    localStorage.setItem('carreras',JSON.stringify(carreras));
-    UpdateCareer();
-}
-
-function buttonAddCarrer(){
-    var div = "<form action='' method='post'><div id='editar2'><label>Nombre: </label><input title='Se necesita un nombre' type='text' size='20' maxlength='20' id='nombreCareer' name='nombreCareer' required autofocus/><br/><label>C&oacute;digo: </label><input type='text' id='codigoCareer' name='codigo' required autofocus/><br/></div>";
-    var buttoms = "<div id='buttoms2second'><button id='ok2' type='submit' class='btn btn-default'><span class='glyphicon glyphicon-ok'></span></button><button id='cancel2' type='submit' class='btn btn-default'><span class='glyphicon glyphicon-remove'></span></button></div></form>"
-    $('#table_wrapper2').html(div+buttoms);
-    $("#cancel2").click(function(){
-        prepareBinding();
-    });
-    $("#ok2").click(function(){
-        if (($("#nombreCareer").val() === "") || ($("#codigoCareer").val() === "")) {
-
-        }else{
-           AddCareer();
-           prepareBinding();
-       }
-   });
-}
-function AddCareer()
-{
-    var nombreCarrera = $('#nombreCareer').val();
-    var codigo = $('#codigoCareer').val();
-    if(nombreCarrera == "" || codigo == ""){
-
-    }else if(nuevaCarrera==true){
-        var carrera = {"nombreCarrera":nombreCarrera,"codigoCareer":codigo};
-        var carreras = JSON.parse(localStorage.getItem('carreras'));
-        if (carreras === null)
-        {
-            carreras = []
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          pendingImage = e.target.result;
+          renderPreview();
         };
-        carreras.push(carrera);
-        localStorage.setItem('carreras',JSON.stringify(carreras));
-        prepareBinding();
-    }else{
-        var carreras = JSON.parse(localStorage.getItem('carreras'));
-        var carrera = {"nombreCarrera":nombreCarrera,"codigoCareer":codigo};
-        carreras.push(carrera);
-        localStorage.setItem('carreras',JSON.stringify(carreras));
-        prepareBinding();
-    }
-}
+        reader.readAsDataURL(f);
+      }
+    });
 
-function deleteCareer (){
-    var carreras = JSON.parse(localStorage.getItem('carreras'));
-    var carreras2 = [];
-    delete carreras[Select];
-    for (var i = 0; carreras.length > i; i++) {
-        if (carreras[i]==null) {
+    var currentSkills = (current && Array.isArray(current.skills)) ? current.skills : [];
+    var skillChecks = SKILLS.map(function (sk) {
+      var cb = el('input', { type: 'checkbox', value: sk, checked: currentSkills.indexOf(sk) !== -1 ? '' : null });
+      return { cb: cb, node: el('label', null, [cb, sk]) };
+    });
 
-        }else{
-            carreras2.push(carreras[i]);
+    var form = el('form', {
+      onSubmit: function (e) {
+        e.preventDefault();
+        var chosenSkills = skillChecks.filter(function (x) { return x.cb.checked; }).map(function (x) { return x.cb.value; });
+        var res = store.saveStudent({
+          cedula: cedulaIn.value,
+          nombre: nameIn.value,
+          carrera: careerSel.value,
+          ingles: englishSel.value,
+          imagen: pendingImage,
+          skills: chosenSkills
+        }, isEdit ? editIndex : undefined);
+        if (!res.ok) {
+          errBox.textContent = res.error;
+          errBox.hidden = false;
+          return;
         }
-    };
-    localStorage.setItem("carreras",JSON.stringify(carreras2));
-    prepareBinding();
-}
+        closeModal();
+        renderAll();
+        showToast(isEdit ? 'Estudiante actualizado.' : 'Estudiante agregado.', 'success');
+      }
+    }, [
+      errBox,
+      el('div', { className: 'field' }, [el('label', { for: 'f-sced', text: 'Cédula' }), cedulaIn]),
+      el('div', { className: 'field' }, [el('label', { for: 'f-sname', text: 'Nombre completo' }), nameIn]),
+      el('div', { className: 'field' }, [el('label', { for: 'f-scareer', text: 'Carrera' }), careerSel]),
+      el('div', { className: 'field' }, [el('label', { for: 'f-senglish', text: 'Nivel de inglés' }), englishSel]),
+      el('div', { className: 'field' }, [
+        el('label', { text: 'Habilidades técnicas' }),
+        el('div', { className: 'skills-grid' }, skillChecks.map(function (x) { return x.node; }))
+      ]),
+      el('div', { className: 'field' }, [el('label', { for: 'f-sfile', text: 'Fotografía (opcional, máx. 1 MB)' }), fileIn, preview]),
+      el('div', { className: 'modal-footer' }, [
+        el('button', { type: 'button', className: 'btn btn-secondary', text: 'Cancelar', onClick: closeModal }),
+        el('button', { type: 'submit', className: 'btn btn-primary', text: isEdit ? 'Guardar cambios' : 'Crear estudiante' })
+      ])
+    ]);
+    openModal(isEdit ? 'Editar estudiante' : 'Nuevo estudiante', form);
+  }
 
+  function openDetail(kind) {
+    var idx = selected[kind];
+    if (idx === null) return;
+    var items = kind === 'users' ? store.listUsers() : kind === 'careers' ? store.listCareers() : store.listStudents();
+    var item = items[idx];
+    if (!item) return;
 
-function UpdateUser(){
-    var Usuarios = JSON.parse(localStorage.getItem('usuarios'));
-    var rows = "<table class='table table-hover users step_wrapper'><tr disabled><th>C&eacute;dula</th><th>Nombre de Usuario</th><th>Nombre Completo</th><th>Rol</th></tr>";
-    if (Usuarios === null)
-    {
-        Usuarios = []
-    };
-
-    for(var i = 0; i< Usuarios.length; i++){
-        rows += "<tr class='step_box' data-row-key="+i+"><td>"+Usuarios[i].cedula+"</td><td>"+Usuarios[i].nombreUsuario+"</td><td>"+Usuarios[i].nombreCompleto+"</td><td>"+Usuarios[i].rol+"</td></tr>" 
-    };
-    rows += "</table>";
-    var buttoms ="<div id='buttoms1first'><button id='add1' type='button' class='btn btn-default'><span class='glyphicon glyphicon-plus-sign'></span></button><button id='edit1' type='button' class='btn btn-default'><span class='glyphicon glyphicon-pencil'></span></button><button id='delete1' type='button' class='btn btn-default'><span class='glyphicon glyphicon-minus-sign'></span></button><button id='search1' type='button' class='btn btn-default'><span class='glyphicon glyphicon-search'></span></button></div>"
-    $('#table_wrapper1').html(rows+buttoms);
-}
-
-function buttonEditUser(){
-    var div = "<form action='' method='post'><div id='editar1'><label>C&eacute;dula: </label><input title='Se necesita una cedula' type='text' id='cedula' name='cedula' required autofocus/><br/><label>Nombre de usuario: </label><input type='text' id='nombreUsuario' name='nombreUsuario' required autofocus/><br/><label>Nombre Completo: </label><input type='text' id='nombreCompleto' name='nombreCompleto' required autofocus/><br/><label>Contrase&ntilde;a: </label><input type='password' id='contrasena' name='contrasena' required autofocus/><br/><label>Rol: </label><label><select class='rol'><option selected>Administrador</option><option >Director de carrera</option><option >Auxiliar</option></select></div>";
-    var buttoms = "<div id='buttoms1second'><button id='ok1' type='submit' class='btn btn-default'><span class='glyphicon glyphicon-ok'></span></button><button id='cancel1' type='submit' class='btn btn-default'><span class='glyphicon glyphicon-remove'></span></button></div></form>"
-    $('#table_wrapper1').html(div+buttoms);
-    var usuarios = JSON.parse(localStorage.getItem('usuarios'));
-    $("#cedula").val(usuarios[Select].cedula);
-    $("#nombreUsuario").val(usuarios[Select].cedula);
-    $("#nombreCompleto").val(usuarios[Select].nombreCompleto);
-    $("#contrasena").val(usuarios[Select].contrasena);
-    $("#cancel1").click(function(){
-        $("#buttoms1second").remove();
-        $("#editar1").remove();
-        prepareBinding();
-    });
-    $("#ok1").click(function(){
-        if (($("#cedula").val() === "") || ($("#nombreUsuario").val() === "")|| ($("#nombreCompleto").val() === "")|| ($("#contrasena").val() === "")) {
-
-        }else{
-           EditUser(Select);
-       }
-   });
-}
-function EditUser (element)
-{
-    nuevoUsuario = false;
-
-    var usuarios = JSON.parse(localStorage.getItem('usuarios'));
-    usuarios[element].cedula = $('#cedula').val();
-    usuarios[element].nombreUsuario = $('#nombreUsuario').val();
-    usuarios[element].nombreCompleto = $('#nombreCompleto').val();
-    usuarios[element].contrasena = $('#contrasena').val();
-    usuarios[element].rol = document.getElementsByClassName("rol")[0].value;
-    localStorage.setItem('usuarios',JSON.stringify(usuarios));
-    prepareBinding();
-}
-
-function buttonAddUser(){
-    var div = "<form action='' method='post'><div id='editar1'><label>C&eacute;dula: </label><input title='Se necesita una cedula' type='text' id='cedula' name='cedula' required autofocus/><br/><label>Nombre de usuario: </label><input type='text' id='nombreUsuario' name='nombreUsuario' required autofocus/><br/><label>Nombre Completo: </label><input type='text' id='nombreCompleto' name='nombreCompleto' required autofocus/><br/><label>Contrase&ntilde;a: </label><input type='password' id='contrasena' name='contrasena' required autofocus/><br/><label>Rol: </label><label><select class='rol'><option selected>Administrador</option><option >Director de carrera</option><option >Auxiliar</option></select></div>";
-    var buttoms = "<div id='buttoms1second'><button id='ok1' type='submit' class='btn btn-default'><span class='glyphicon glyphicon-ok'></span></button><button id='cancel1' type='submit' class='btn btn-default'><span class='glyphicon glyphicon-remove'></span></button></div></form>"
-    $('#table_wrapper1').html(div+buttoms);
-    $("#cancel1").click(function(){
-        $("#buttoms1second").remove();
-        $("#editar1").remove();
-        prepareBinding();
-    });
-    $("#ok1").click(function(){
-        if (($("#cedula").val() === "") || ($("#nombreUsuario").val() === "")|| ($("#nombreCompleto").val() === "")|| ($("#contrasena").val() === "")) {
-
-        }else{
-           AddUser();
-       }
-   });
-}
-function AddUser()
-{
-    var cedula = $('#cedula').val();
-    var nombreUsuario = $('#nombreUsuario').val();
-    var nombreCompleto = $('#nombreCompleto').val();
-    var contrasena = $('#contrasena').val();
-    var rol=document.getElementsByClassName("rol")[0].value;
-    if(cedula == "" || nombreUsuario == ""){
-
-    }else if(nuevoUsuario==true){
-        var usuario = {"cedula":cedula,"nombreUsuario":nombreUsuario,"nombreCompleto":nombreCompleto,"contrasena":contrasena,"rol":rol};
-        var usuarios = JSON.parse(localStorage.getItem('usuarios'));
-        if (usuarios === null)
-        {
-            usuarios = []
-        };
-        usuarios.push(usuario);
-        localStorage.setItem('usuarios',JSON.stringify(usuarios));
-        prepareBinding();
-    }else{
-        var usuarios = JSON.parse(localStorage.getItem('usuarios'));
-        var usuario = {"cedula":cedula,"nombreUsuario":nombreUsuario,"nombreCompleto":nombreCompleto,"contrasena":contrasena,"rol":rol};
-        usuarios.push(usuario);
-        localStorage.setItem('usuarios',JSON.stringify(usuarios));
-        prepareBinding();
+    var wrap = el('div');
+    if (kind === 'students' && item.imagen) {
+      wrap.appendChild(el('p', null, [el('img', { className: 'thumb', src: item.imagen, alt: 'Fotografía de ' + item.nombre })]));
     }
-}
-
-function deleteUser(){
-    var usuarios = JSON.parse(localStorage.getItem('usuarios'));
-    var usuarios2 = [];
-    delete usuarios[Select];
-    for (var i = 0; usuarios.length > i; i++) {
-        if (usuarios[i]==null) {
-
-        }else{
-            usuarios2.push(usuarios[i]);
-        }
-    };
-    localStorage.setItem("usuarios",JSON.stringify(usuarios2));
-    prepareBinding();
-};
-
-function popup(tipo){
-    var div = "<div class='window-container zoomin'><h3>Advertencia</h3><br/><br/><span class='delete btn btn-default'>Eliminar</span><span id='close' class='btn btn-default'>Cancelar</span></div>";
-    $('.overlay-container').html(div);
-    $('.overlay-container').fadeIn(function() {
-
-        window.setTimeout(function(){
-
-            $('.window-container.zoomin').addClass('window-container-visible');
-        }, 100);
-
+    var pairs = kind === 'users'
+      ? [['Cédula', item.cedula], ['Usuario', item.nombreUsuario], ['Nombre completo', item.nombreCompleto], ['Rol', item.rol]]
+      : kind === 'careers'
+        ? [['Nombre', item.nombreCarrera], ['Código', item.codigoCareer]]
+        : [
+            ['Cédula', item.cedula],
+            ['Nombre completo', item.nombre],
+            ['Carrera', item.carrera],
+            ['Nivel de inglés', item.ingles],
+            ['Habilidades', (item.skills && item.skills.length) ? item.skills.join(', ') : 'Ninguna registrada']
+          ];
+    var dl = el('dl', { className: 'detail-list' });
+    pairs.forEach(function (pair) {
+      dl.appendChild(el('dt', { text: pair[0] }));
+      dl.appendChild(el('dd', { text: pair[1] || '—' }));
     });
-    $('#close').click(function() {
-        $('.overlay-container').fadeOut().end().find('.window-container').removeClass('window-container-visible');
+    wrap.appendChild(dl);
+    wrap.appendChild(el('div', { className: 'modal-footer' }, [
+      el('button', { type: 'button', className: 'btn btn-primary', text: 'Cerrar', onClick: closeModal })
+    ]));
+    openModal('Detalle del registro', wrap);
+  }
+
+  function openDeleteConfirm(kind) {
+    var idx = selected[kind];
+    if (idx === null) return;
+    var label = kind === 'users' ? 'este usuario' : kind === 'careers' ? 'esta carrera' : 'este estudiante';
+    var content = el('div', null, [
+      el('p', { text: '¿Seguro que deseas eliminar ' + label + '? Esta acción no se puede deshacer.' }),
+      el('div', { className: 'modal-footer' }, [
+        el('button', { type: 'button', className: 'btn btn-secondary', text: 'Cancelar', onClick: closeModal }),
+        el('button', {
+          type: 'button',
+          className: 'btn btn-danger',
+          text: 'Eliminar',
+          onClick: function () {
+            if (kind === 'users') store.deleteUser(idx);
+            else if (kind === 'careers') store.deleteCareer(idx);
+            else store.deleteStudent(idx);
+            selected[kind] = null;
+            closeModal();
+            renderAll();
+            showToast('Registro eliminado.', 'success');
+          }
+        })
+      ])
+    ]);
+    openModal('Confirmar eliminación', content);
+  }
+
+  function renderAll() {
+    renderTable('table_wrapper1', 'users', '1', ['Cédula', 'Usuario', 'Nombre completo', 'Rol'], store.listUsers(), function (u) {
+      return [u.cedula, u.nombreUsuario, u.nombreCompleto, u.rol];
     });
-    $('.delete').click(function() {
-        if (tipo == 1) {
-            deleteCareer();
-        }
-        if (tipo == 2) {
-            deleteUser();
-        }
-        if (tipo == 3) {
-            deleteStudent();
-        }
-        $('.overlay-container').fadeOut().end().find('.window-container').removeClass('window-container-visible');
+    renderTable('table_wrapper2', 'careers', '2', ['Nombre', 'Código'], store.listCareers(), function (c) {
+      return [c.nombreCarrera, c.codigoCareer];
     });
-    
-};
-function seleccionar(){
-    $('.step_wrapper').on('click','.step_box',function () {
-       $('.step_box').removeClass('selected');
-       $(this).addClass('selected');
-   });
-};
+    renderTable('table_wrapper3', 'students', '3', ['Cédula', 'Nombre completo', 'Carrera', 'Inglés'], store.listStudents(), function (s) {
+      return [s.cedula, s.nombre, s.carrera, s.ingles];
+    });
+    updateCounters();
+    renderSearches();
+  }
 
-function UpdateStudent(){
-    var Estudiante = JSON.parse(localStorage.getItem('estudiante'));
-    var rows = "<table class='table table-hover users step_wrapper'><tr disabled><th>C&eacute;dula</th><th>Nombre Completo</th><th>Carrera</th><th>Ingles</th></tr>";
-    if (Estudiante === null)
-    {
-        Estudiante = []
-    };
-
-    for(var i = 0; i< Estudiante.length; i++){
-        rows += "<tr class='step_box' data-row-key="+i+"><td>"+Estudiante[i].cedula+"</td><td>"+Estudiante[i].nombre+"</td><td>"+Estudiante[i].carrera+"</td><td>"+Estudiante[i].ingles+"</td>" 
-    };
-    rows += "</table>";
-    var buttoms ="<div id='buttoms3first'><button id='add3' type='button' class='btn btn-default'><span class='glyphicon glyphicon-plus-sign'></span></button><button id='edit3' type='button' class='btn btn-default'><span class='glyphicon glyphicon-pencil'></span></button><button id='delete3' type='button' class='btn btn-default'><span class='glyphicon glyphicon-minus-sign'></span></button><button id='search3' type='button' class='btn btn-default'><span class='glyphicon glyphicon-search'></span></button></div>"
-    $('#table_wrapper3').html(rows+buttoms);
-};
-
-function buttonEditStudent(){
-    var div = "<form action='' method='post'><div id='editar3'><label>C&eacute;dula: </label><input title='Se necesita una cedula' type='text' id='cedula' name='cedula' required autofocus/><br/><label>Nombre Completo: </label><input type='text' id='nombre' name='nombre' required autofocus/><br/><label>Carrera: </label><select id='comboCarrera' class='carrera'>";
-    var carreras = JSON.parse(localStorage.getItem('carreras'));
-    for (var i = 0; i < carreras.length; i++) {
-        div += "<option>"+carreras[i].nombreCarrera+"</option>";
+  function prepareBinding() {
+    var session = store.getSession();
+    var sessionLabel = document.getElementById('session-label');
+    if (sessionLabel) {
+      sessionLabel.textContent = session ? ('Sesión: ' + session.nombreCompleto + ' (' + session.rol + ')') : 'Sesión: Invitado';
     }
-    div += "</select><br/><label>Seleccione la imagen</label><input id='files' type='file' size='15' required/><output id='list'></output><br/><div class='ingles'><h4>Nivel de Ingles</h4><div class='part1'><select class='cajas'><option>Principiante</option><option>Intermedio</option><option>Avanzado</option></select><br/></div></div>";
-    var buttoms = "<div id='buttoms3second'><button id='ok3' type='submit' class='btn btn-default'><span class='glyphicon glyphicon-ok'></span></button><button id='cancel3' type='submit' class='btn btn-default'><span class='glyphicon glyphicon-remove'></span></button></div></form>"
-    $('#table_wrapper3').html(div+buttoms);
-    var estudiante = JSON.parse(localStorage.getItem('estudiante'));
-    var img = estudiante[Select].imagen;
-    var span = document.createElement('span');
-    span.innerHTML = ['<img class="thumb" src="', img,
-    '" title="imagen"/>'].join('');
-    $('#list').html(span);
-    $("#cedula").val(estudiante[Select].cedula);
-    $("#nombre").val(estudiante[Select].nombre);
-    $("#cancel3").click(function(){
-        $("#buttoms3second").remove();
-        $("#editar3").remove();
-        prepareBinding();
+
+    document.getElementById('logout-btn').addEventListener('click', function () {
+      store.logout();
+      window.location.href = 'index.html';
     });
 
-    document.getElementById('files').addEventListener('change', cargar, false);
-    $("#ok3").click(function(){
-        if (($("#cedula").val() === "") || ($("#nombre").val() === "") || (document.getElementById("files").value === "")) {
-
-        }else{
-           EditStudent(Select);
-       }
-   });
-};
-function EditStudent (element)
-{
-    nuevoEstudiante = false;
-    var img = imagen;
-    var estudiante = JSON.parse(localStorage.getItem('estudiante'));
-    estudiante[element].cedula = $('#cedula').val();
-    estudiante[element].nombre = $('#nombre').val();
-    estudiante[element].carrera = document.getElementsByClassName("carrera")[0].value;
-    estudiante[element].ingles = document.getElementsByClassName("cajas")[0].value;
-    estudiante[element].imagen = img;
-    var selected = [];
-    $('div.skills input[type=checkbox]').each(function() {
-     if ($(this).checked) {
-         selected.push($(this).attr('name'));
-     }
- });
-    estudiante[element].skills = selected;
-    localStorage.setItem('estudiante',JSON.stringify(estudiante));
-    prepareBinding();
-};
-
-function buttonAddStudent(){
-    var div = "<form action='' method='post'><div id='editar3'><label>C&eacute;dula: </label><input title='Se necesita una cedula' type='text' id='cedula' name='cedula' required autofocus/><br/><label>Nombre Completo: </label><input type='text' id='nombre' name='nombre' required autofocus/><br/><label>Carrera: </label><select class='carrera'>";
-    var carreras = JSON.parse(localStorage.getItem('carreras'));
-    for (var i = 0; i < carreras.length; i++) {
-        div += "<option>"+carreras[i].nombreCarrera+"</option>";
-    }
-    div += "</select><br/><label>Seleccione la imagen</label><input id='files' type='file' size='15' required/><output id='list'></output><br/><div class='ingles'><h4>Nivel de Ingles</h4><div class='part1'><select class='cajas'><option>Principiante</option><option>Intermedio</option><option>Avanzado</option></select><br/></div></div>";
-    var buttoms = "<div id='buttoms3second'><button id='ok3' type='submit' class='btn btn-default'><span class='glyphicon glyphicon-ok'></span></button><button id='cancel3' type='submit' class='btn btn-default'><span class='glyphicon glyphicon-remove'></span></button></div></form>"
-    $('#table_wrapper3').html(div+buttoms);
-    $("#cancel3").click(function(){
-        $("#buttoms3second").remove();
-        $("#editar3").remove();
-        prepareBinding();
+    document.querySelectorAll('.tab-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        switchTab(Number(btn.getAttribute('data-tab')));
+      });
     });
 
-    document.getElementById('files').addEventListener('change', cargar, false);
-    $("#ok3").click(function(){
-        if (($("#cedula").val() === "") || ($("#nombre").val() === "") || (document.getElementById("files").value === "")) {
-
-        }else{
-
-           AddStudent(Select);
-       }
-   });
-};
-function cargar(evt) {
-
-    var files = evt.target.files; // FileList object
-    var f = files[0];
-    var reader = new FileReader();
-
-      // Closure to capture the file information.
-      reader.onload = (function(theFile) {
-        return function(e) {
-          // Render thumbnail.
-          var span = document.createElement('span');
-          imagen = e.target.result;
-          title = escape(theFile.name);
-          span.innerHTML = ['<img class="thumb" src="', e.target.result,
-          '" title="', escape(theFile.name), '"/>'].join('');
-          $('#list').html(span);
-      };
-  })(f);
-
-      // Read in the image file as a data URL.
-      reader.readAsDataURL(f);
-  };
-  function AddStudent()
-  {
-    var img = imagen;
-    var cedula = $('#cedula').val();
-    var nombre = $('#nombre').val();
-    var carrera=document.getElementsByClassName("carrera")[0].value;
-    var ingles=document.getElementsByClassName("cajas")[0].value;
-    if(cedula == "" || nombre == ""){
-
-    }else if(nuevoEstudiante==true){
-        var estudiante = {"cedula":cedula,"nombre":nombre,"carrera":carrera,"ingles":ingles,"imagen":img};
-        var estudiantes = JSON.parse(localStorage.getItem('estudiante'));
-        if (estudiantes === null)
-        {
-            estudiantes = []
-        };
-        estudiantes.push(estudiante);
-        localStorage.setItem('estudiante',JSON.stringify(estudiantes));
-        prepareBinding();
-    }else{
-        var estudiantes = JSON.parse(localStorage.getItem('estudiante'));
-        var estudiante = {"cedula":cedula,"nombre":nombre,"carrera":carrera,"ingles":ingles,"imagen":img};
-        estudiantes.push(estudiante);
-        localStorage.setItem('estudiante',JSON.stringify(estudiantes));
-        prepareBinding();
-    }
-};
-
-function deleteStudent(){
-    var Estudiante = JSON.parse(localStorage.getItem('estudiante'));
-    var estudiante2 = [];
-    delete Estudiante[Select];
-    for (var i = 0; Estudiante.length > i; i++) {
-        if (Estudiante[i]==null) {
-
-        }else{
-            estudiante2.push(Estudiante[i]);
-        }
-    };
-    localStorage.setItem("estudiante",JSON.stringify(estudiante2));
-    prepareBinding();
-};
-
-function popupVer(tipo){
-    var div = "<div class='window-container zoomin'></div>";
-    $('.overlay-container').html(div);
-    $('.overlay-container').fadeIn(function() {
-
-        window.setTimeout(function(){
-
-            $('.window-container.zoomin').addClass('window-container-visible');
-        }, 100);
-
+    document.getElementById('global-search-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      executeSearch(document.getElementById('global-search-input').value, true);
     });
-    
-    if (tipo == 1) {
-        var carreras = JSON.parse(localStorage.getItem('carreras'));
-        var rows = "<table class='table table-hover careers step_wrapper'><tr disabled><th>Nombre</th><th>C&oacute;digo</th></tr>";
-        rows += "<tr class='step_box' data-row-key="+Select+"><td>"+carreras[Select].nombreCarrera+"</td><td>"+carreras[Select].codigoCareer+"</td></tr>" 
-        rows += "</table>";
-        var buttom = "<span id='cancel' class='btn btn-default'>Cerrar</span>";
-        $('.window-container').html(rows+buttom);
+    document.getElementById('global-search-clear').addEventListener('click', function () {
+      document.getElementById('global-search-input').value = '';
+      document.getElementById('search-results').innerHTML = '';
+    });
 
-    }
-    if (tipo == 2) {
-     var Usuarios = JSON.parse(localStorage.getItem('usuarios'));
-     var rows = "<table class='table table-hover users step_wrapper'><tr disabled><th>C&eacute;dula</th><th>Nombre de Usuario</th><th>Nombre Completo</th><th>Rol</th></tr>";
-     rows += "<tr class='step_box' data-row-key="+Select+"><td>"+Usuarios[Select].cedula+"</td><td>"+Usuarios[Select].nombreUsuario+"</td><td>"+Usuarios[Select].nombreCompleto+"</td><td>"+Usuarios[Select].rol+"</td></tr>" 
-     rows += "</table>";
-     var buttom = "<span id='cancel' class='btn btn-default'>Cerrar</span>";
-     $('.window-container').html(rows+buttom);
- }
- if (tipo == 3) {
-     var Estudiante = JSON.parse(localStorage.getItem('estudiante'));
-     var img = Estudiante[Select].imagen;
-     var span = document.createElement('span');
-     span.innerHTML = ['<img class="thumb" src="', img,
-     '" title="imagen"/>'].join('');
-     var div = "<div class='foto'></div>";
-     var rows = "<table class='table table-hover users step_wrapper'><tr disabled><th>C&eacute;dula</th><th>Nombre Completo</th><th>Carrera</th><th>Ingles</th></tr>";
-     rows += "<tr class='step_box' data-row-key="+Select+"><td>"+Estudiante[Select].cedula+"</td><td>"+Estudiante[Select].nombre+"</td><td>"+Estudiante[Select].carrera+"</td><td>"+Estudiante[Select].ingles+"</td>" 
-     rows += "</table>";
-     var buttom = "<span id='cancel' class='btn btn-default'>Cerrar</span>";
-     $('.window-container').html(div+rows+buttom);
-     $('.foto').html(span);
- }
- $('#cancel').click(function() {
-    $('.overlay-container').fadeOut().end().find('.window-container').removeClass('window-container-visible');
-});
-};
+    document.getElementById('add1').addEventListener('click', function () { openUserForm(); });
+    document.getElementById('edit1').addEventListener('click', function () { if (selected.users !== null) openUserForm(selected.users); });
+    document.getElementById('search1').addEventListener('click', function () { openDetail('users'); });
+    document.getElementById('delete1').addEventListener('click', function () { openDeleteConfirm('users'); });
+
+    document.getElementById('add2').addEventListener('click', function () { openCareerForm(); });
+    document.getElementById('edit2').addEventListener('click', function () { if (selected.careers !== null) openCareerForm(selected.careers); });
+    document.getElementById('search2').addEventListener('click', function () { openDetail('careers'); });
+    document.getElementById('delete2').addEventListener('click', function () { openDeleteConfirm('careers'); });
+
+    document.getElementById('add3').addEventListener('click', function () { openStudentForm(); });
+    document.getElementById('edit3').addEventListener('click', function () { if (selected.students !== null) openStudentForm(selected.students); });
+    document.getElementById('search3').addEventListener('click', function () { openDetail('students'); });
+    document.getElementById('delete3').addEventListener('click', function () { openDeleteConfirm('students'); });
+
+    document.getElementById('modal-close-x').addEventListener('click', closeModal);
+    document.getElementById('modal-backdrop').addEventListener('click', function (e) {
+      if (e.target === e.currentTarget) closeModal();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !document.getElementById('modal-backdrop').hidden) {
+        closeModal();
+      }
+    });
+
+    renderAll();
+  }
+
+  window.prepareBinding = prepareBinding;
+  document.addEventListener('DOMContentLoaded', prepareBinding);
+})();

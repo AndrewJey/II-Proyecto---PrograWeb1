@@ -17,3 +17,10 @@ py -3.12 -m http.server 8000 --bind 127.0.0.1
 
 `.gitignore` excluye credenciales locales, estado del editor y salidas de las herramientas detectadas. No deja de versionar archivos que ya estaban en Git. Los manifiestos, archivos de bloqueo, recursos fuente y scripts de esquema forman parte del código.
 <!-- local-development:end -->
+
+<!-- improvements-20261119:start -->
+## Mejoras y verificación funcional (2026-11-19)
+
+- **Mejoras aplicadas:** Rediseño responsivo y accesible de UTN Perfiles (`index.html`, `DashDoard.html`, `css/modern-app.css`), motor de datos desacoplado (`js/store.js`), corrección del fallo de login con `localStorage` vacío, prevención de XSS/duplicados, preservación de nombre de usuario/foto al editar, habilidades funcionales y búsqueda global con historial.
+- **Pruebas ejecutadas:** `node --test tests/store.test.mjs` (3/3 pruebas aprobadas: login, CRUD Usuarios/Carreras/Estudiantes, validación de imágenes y búsqueda).
+<!-- improvements-20261119:end -->

@@ -1,40 +1,44 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset= "UTF-8">
-  <!-- Bootstrap core CSS -->
-  <script type="text/javascript" src="js/login.js"></script>
-  <link href="css/bootstrap.css" rel="stylesheet">
-  <link rel="stylesheet" type="text/css" href="less/styleLogin.css">
-  <link rel="stylesheet" href="js/jquery/jquery-ui.css">
-  <script src="js/jquery-1.11.1.js"></script>
-  <script src="js/jquery/jquery-ui.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UTN Perfiles — Iniciar sesión</title>
+  <link rel="stylesheet" href="css/modern-app.css">
 </head>
-<body>
-  <div class="site-wrapper-inner">
-    <div class="container">
-      <div class="col-xs-6 col-sm-4"></div>
-      <div class="col-xs-6 col-sm-4">
-        <div class="form-signin jumbotron">
-          <img class = "img img-responsive" src="img/utn.jpg" alt="utn">
-          <h2 class = 'form-signin-heading' >UTN Perfiles</h2>
-          <input id="user" class = 'form-control user' type="text" name="user_name" placeholder="Usuario">
-          <div class="form-group">
-            <label class="sr-only" for="exampleInputPassword2">Contraseña</label>
-            <input type="password" class="form-control pass" id="exampleInputPassword2" placeholder="Contraseña">
-          </div>
-          <form name="input">
-            <input id="ok" class = "btn btn-lg btn-primary btn-block buttom" type="submit">
-          </form>
+<body class="login-page">
+  <main class="login-card">
+    <div class="login-brand">
+      <img src="img/utn.jpg" alt="Logotipo UTN">
+      <h1>UTN Perfiles</h1>
+      <p>Gestión de usuarios, carreras y estudiantes</p>
+    </div>
+
+    <div id="login-error" class="alert alert-error" role="alert" hidden></div>
+
+    <form id="login-form" novalidate>
+      <div class="field">
+        <label for="user">Usuario</label>
+        <input id="user" class="user" type="text" name="user_name" autocomplete="username" placeholder="Ej. admin" required>
+      </div>
+
+      <div class="field">
+        <label for="exampleInputPassword2">Contraseña</label>
+        <div class="password-wrap">
+          <input id="exampleInputPassword2" class="pass" type="password" name="password" autocomplete="current-password" placeholder="Ingresa tu contraseña" required>
+          <button id="toggle-pass" type="button" class="btn btn-secondary" aria-pressed="false" aria-label="Mostrar u ocultar contraseña">Ver</button>
         </div>
       </div>
-      <div class="col-xs-6 col-sm-4"></div>
+
+      <button id="ok" class="btn btn-primary btn-block" type="submit">Ingresar</button>
+    </form>
+
+    <div class="alert alert-info">
+      Acceso predeterminado: <strong>admin</strong> / <strong>12345</strong> (también funcionan los usuarios creados en el panel).
     </div>
-  </div>
-  <link href="js/bootstrap.js" rel="stylesheet">
-  <link href="js/bootstrap.min.js" rel="stylesheet">
-  <script type="text/javascript" href="js/login.js">
-    prepareBinding();
-  </script>
+  </main>
+
+  <script src="js/store.js"></script>
+  <script src="js/login.js"></script>
 </body>
 </html>
